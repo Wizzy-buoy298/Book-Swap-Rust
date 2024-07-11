@@ -195,7 +195,6 @@ fn create_user_profile(payload: UserPayload) -> Result<User, Error> {
     }
 
     // Validate the payload to ensure that the email format is correct
-    // Validate the email address
     let email_regex = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
     if !email_regex.is_match(&payload.email) {
         return Err(Error::InvalidEmail {
@@ -218,7 +217,7 @@ fn create_user_profile(payload: UserPayload) -> Result<User, Error> {
     }
 
     // Validate the payload to ensure that the phone number format is correct and is 10 digits
-    let phone_number_regex = Regex::new(r"^[0-9]{10}$").unwrap();
+    let phone_number_regex = Regex::new(r"^\+[1-9]\d{1,14}$").unwrap(); // International phone number format
     if !phone_number_regex.is_match(&payload.phone_number) {
         return Err(Error::InvalidPhoneNumber {
             msg: "Ensure the phone number is of the correct format".to_string(),
@@ -275,7 +274,7 @@ fn update_user_profile(user_id: u64, payload: UserPayload) -> Result<User, Strin
             if user_id != user.id {
                 return Err("User does not exist".to_string());
             }
-            
+
             // Validate the payload to ensure that the email format is correct
             let email_regex = Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
             if !email_regex.is_match(&payload.email) {
@@ -295,7 +294,7 @@ fn update_user_profile(user_id: u64, payload: UserPayload) -> Result<User, Strin
             }
 
             // Validate the payload to ensure that the phone number format is correct and is 10 digits
-            let phone_number_regex = Regex::new(r"^[0-9]{10}$").unwrap();
+            let phone_number_regex = Regex::new(r"^\+[1-9]\d{1,14}$").unwrap();
             if !phone_number_regex.is_match(&payload.phone_number) {
                 return Err("Ensure the phone number is of the correct format".to_string());
             }
@@ -318,26 +317,39 @@ fn update_user_profile(user_id: u64, payload: UserPayload) -> Result<User, Strin
     }
 }
 
+// Function to delete a user profile
+#[ic_cdk::update]
+fn delete_user_profile(user_id: u64) -> Result<(), String> {
+    // Ensure that the user exists
+    let user_exists = USERS_STORAGE.with(|storage| storage.borrow().contains_key(&user_id));
+    if !user_exists {
+        return Err("User does not exist".to_string());
+    }
+
+    // Delete the user profile from USERS_STORAGE
+    USERS_STORAGE.with(|storage| storage.borrow_mut().remove(&user_id));
+
+    Ok(())
+}
+
 // Function to retrieve all users
 #[ic_cdk::query]
 fn get_all_users() -> Result<Vec<User>, Error> {
     USERS_STORAGE.with(|storage| {
-         let stable_btree_map  = &*storage.borrow();
-        
+        let stable_btree_map = &*storage.borrow();
+
         let records: Vec<User> = stable_btree_map
             .iter()
             .map(|(_, user)| user.clone())
             .collect();
-        
+
         if records.is_empty() {
             return Err(Error::NotFound {
                 msg: "No users found".to_string(),
             });
         }
-        
-        else {
-            Ok(records)
-        }
+
+        Ok(records)
     })
 }
 
@@ -512,6 +524,21 @@ fn create_swap_request(payload: SwapRequestPayload) -> Result<SwapRequest, Strin
     Ok(swap_request)
 }
 
+// Function to update a swap request status
+#[ic_cdk::update]
+fn update_swap_request_status(swap_request_id: u64, status: SwapStatus) -> Result<SwapRequest, String> {
+    // Ensure that the swap request exists
+    let swap_request = SWAP_REQUESTS_STORAGE.with(|storage| storage.borrow().get(&swap_request_id));
+    match swap_request {
+        Some(mut swap_request) => {
+            swap_request.status = status;
+            SWAP_REQUESTS_STORAGE.with(|storage| storage.borrow_mut().insert(swap_request_id, swap_request.clone()));
+            Ok(swap_request.clone())
+        }
+        None => Err("Swap request does not exist".to_string()),
+    }
+}
+
 // Fetch to get swap requests
 #[ic_cdk::query]
 fn get_swap_requests(swap_request_id: u64) -> Result<SwapRequest, String> {
@@ -581,7 +608,7 @@ fn create_feedback(payload: FeedbackPayload) -> Result<Feedback, String> {
 
     // Store the new feedback in the FEEDBACK_STORAGE
     FEEDBACK_STORAGE.with(|storage| storage.borrow_mut().insert(id, feedback.clone()));
-    
+
     Ok(feedback)
 }
 
